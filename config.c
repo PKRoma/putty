@@ -1049,12 +1049,6 @@ void setup_config_box(struct controlbox *b, struct sesslist *sesslist,
     ctrl_checkbox(s, "Disable remote-controlled character set configuration",
 		  'r', HELPCTX(features_charset), dlg_stdcheckbox_handler,
 		  I(offsetof(Config,no_remote_charset)));
-    ctrl_checkbox(s, "Disable Arabic text shaping",
-		  'l', HELPCTX(features_arabicshaping), dlg_stdcheckbox_handler,
-		  I(offsetof(Config, arabicshaping)));
-    ctrl_checkbox(s, "Disable bidirectional text display",
-		  'd', HELPCTX(features_bidi), dlg_stdcheckbox_handler,
-		  I(offsetof(Config, bidi)));
 
     /*
      * The Window panel.
@@ -1288,6 +1282,36 @@ void setup_config_box(struct controlbox *b, struct sesslist *sesslist,
 			 HELPCTX(connection_username),
 			 dlg_stdeditbox_handler, I(offsetof(Config,username)),
 			 I(sizeof(((Config *)0)->username)));
+
+	    ctrl_text(s, "Environment variables:", HELPCTX(telnet_environ));
+	    ctrl_columns(s, 2, 80, 20);
+	    ed = (struct environ_data *)
+		ctrl_alloc(b, sizeof(struct environ_data));
+	    ed->varbox = ctrl_editbox(s, "Variable", 'v', 60,
+				      HELPCTX(telnet_environ),
+				      environ_handler, P(ed), P(NULL));
+	    ed->varbox->generic.column = 0;
+	    ed->valbox = ctrl_editbox(s, "Value", 'l', 60,
+				      HELPCTX(telnet_environ),
+				      environ_handler, P(ed), P(NULL));
+	    ed->valbox->generic.column = 0;
+	    ed->addbutton = ctrl_pushbutton(s, "Add", 'd',
+					    HELPCTX(telnet_environ),
+					    environ_handler, P(ed));
+	    ed->addbutton->generic.column = 1;
+	    ed->rembutton = ctrl_pushbutton(s, "Remove", 'r',
+					    HELPCTX(telnet_environ),
+					    environ_handler, P(ed));
+	    ed->rembutton->generic.column = 1;
+	    ctrl_columns(s, 1, 100);
+	    ed->listbox = ctrl_listbox(s, NULL, NO_SHORTCUT,
+				       HELPCTX(telnet_environ),
+				       environ_handler, P(ed));
+	    ed->listbox->listbox.height = 3;
+	    ed->listbox->listbox.ncols = 2;
+	    ed->listbox->listbox.percentages = snewn(2, int);
+	    ed->listbox->listbox.percentages[0] = 30;
+	    ed->listbox->listbox.percentages[1] = 70;
 	}
 
 	s = ctrl_getset(b, "Connection", "keepalive",
@@ -1389,40 +1413,6 @@ void setup_config_box(struct controlbox *b, struct sesslist *sesslist,
 	ctrl_settitle(b, "Connection/Telnet",
 		      "Options controlling Telnet connections");
 
-	if (!midsession) {
-	    s = ctrl_getset(b, "Connection/Telnet", "data",
-			    "Data to send to the server");
-	    ctrl_text(s, "Environment variables:", HELPCTX(telnet_environ));
-	    ctrl_columns(s, 2, 80, 20);
-	    ed = (struct environ_data *)
-		ctrl_alloc(b, sizeof(struct environ_data));
-	    ed->varbox = ctrl_editbox(s, "Variable", 'v', 60,
-				      HELPCTX(telnet_environ),
-				      environ_handler, P(ed), P(NULL));
-	    ed->varbox->generic.column = 0;
-	    ed->valbox = ctrl_editbox(s, "Value", 'l', 60,
-				      HELPCTX(telnet_environ),
-				      environ_handler, P(ed), P(NULL));
-	    ed->valbox->generic.column = 0;
-	    ed->addbutton = ctrl_pushbutton(s, "Add", 'd',
-					    HELPCTX(telnet_environ),
-					    environ_handler, P(ed));
-	    ed->addbutton->generic.column = 1;
-	    ed->rembutton = ctrl_pushbutton(s, "Remove", 'r',
-					    HELPCTX(telnet_environ),
-					    environ_handler, P(ed));
-	    ed->rembutton->generic.column = 1;
-	    ctrl_columns(s, 1, 100);
-	    ed->listbox = ctrl_listbox(s, NULL, NO_SHORTCUT,
-				       HELPCTX(telnet_environ),
-				       environ_handler, P(ed));
-	    ed->listbox->listbox.height = 3;
-	    ed->listbox->listbox.ncols = 2;
-	    ed->listbox->listbox.percentages = snewn(2, int);
-	    ed->listbox->listbox.percentages[0] = 30;
-	    ed->listbox->listbox.percentages[1] = 70;
-	}
-
 	s = ctrl_getset(b, "Connection/Telnet", "protocol",
 			"Telnet protocol adjustments");
 
@@ -1491,6 +1481,10 @@ void setup_config_box(struct controlbox *b, struct sesslist *sesslist,
 		      HELPCTX(ssh_nopty),
 		      dlg_stdcheckbox_handler,
 		      I(offsetof(Config,nopty)));
+	ctrl_checkbox(s, "Don't start a shell or command at all", 'n',
+		      HELPCTX(ssh_noshell),
+		      dlg_stdcheckbox_handler,
+		      I(offsetof(Config,ssh_no_shell)));
 	ctrl_checkbox(s, "Enable compression", 'e',
 		      HELPCTX(ssh_compress),
 		      dlg_stdcheckbox_handler,
@@ -1502,7 +1496,7 @@ void setup_config_box(struct controlbox *b, struct sesslist *sesslist,
 			  "1 only", 'l', I(0),
 			  "1", '1', I(1),
 			  "2", '2', I(2),
-			  "2 only", 'n', I(3), NULL);
+			  "2 only", 'y', I(3), NULL);
 
 	s = ctrl_getset(b, "Connection/SSH", "encryption", "Encryption options");
 	c = ctrl_draglist(s, "Encryption cipher selection policy:", 's',

@@ -111,6 +111,7 @@ static struct unicode_data ucsdata;
 static int session_closed;
 
 static const struct telnet_special *specials;
+static int n_specials;
 
 static struct {
     HMENU menu;
@@ -686,8 +687,6 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show)
 	SetScrollInfo(hwnd, SB_VERT, &si, FALSE);
     }
 
-    start_backend();
-
     /*
      * Prepare the mouse handler.
      */
@@ -742,7 +741,7 @@ int WINAPI WinMain(HINSTANCE inst, HINSTANCE prev, LPSTR cmdline, int show)
 	}
     }
 
-    update_specials_menu(NULL);
+    start_backend();
 
     /*
      * Set up the initial input locale.
@@ -917,20 +916,48 @@ void update_specials_menu(void *frontend)
 	specials = NULL;
 
     if (specials) {
-	p = CreateMenu();
-	for (i = 0; specials[i].name; i++) {
+	/* We can't use Windows to provide a stack for submenus, so
+	 * here's a lame "stack" that will do for now. */
+	HMENU saved_menu = NULL;
+	int nesting = 1;
+	p = CreatePopupMenu();
+	for (i = 0; nesting > 0; i++) {
 	    assert(IDM_SPECIAL_MIN + 0x10 * i < IDM_SPECIAL_MAX);
-	    if (*specials[i].name)
+	    switch (specials[i].code) {
+	      case TS_SEP:
+		AppendMenu(p, MF_SEPARATOR, 0, 0);
+		break;
+	      case TS_SUBMENU:
+		assert(nesting < 2);
+		nesting++;
+		saved_menu = p; /* XXX lame stacking */
+		p = CreatePopupMenu();
+		AppendMenu(saved_menu, MF_POPUP | MF_ENABLED,
+			   (UINT) p, specials[i].name);
+		break;
+	      case TS_EXITMENU:
+		nesting--;
+		if (nesting) {
+		    p = saved_menu; /* XXX lame stacking */
+		    saved_menu = NULL;
+		}
+		break;
+	      default:
 		AppendMenu(p, MF_ENABLED, IDM_SPECIAL_MIN + 0x10 * i,
 			   specials[i].name);
-	    else
-		AppendMenu(p, MF_SEPARATOR, 0, 0);
+		break;
+	    }
 	}
-    } else
+	/* Squirrel the highest special. */
+	n_specials = i - 1;
+    } else {
 	p = NULL;
+	n_specials = 0;
+    }
 
     for (j = 0; j < lenof(popup_menus); j++) {
 	if (menu_already_exists) {
+	    /* XXX does this free up all submenus? */
 	    DeleteMenu(popup_menus[j].menu,
 		       popup_menus[j].specials_submenu_pos,
 		       MF_BYPOSITION);
@@ -1126,36 +1153,6 @@ static void init_palette(void)
 	for (i = 0; i < NCOLOURS; i++)
 	    colours[i] = RGB(defpal[i].rgbtRed,
 			     defpal[i].rgbtGreen, defpal[i].rgbtBlue);
-}
-
-/*
- * This is a wrapper to ExtTextOut() to force Windows to display
- * the precise glyphs we give it. Otherwise it would do its own
- * bidi and Arabic shaping, and we would end up uncertain which
- * characters it had put where.
- */
-static void exact_textout(HDC hdc, int x, int y, CONST RECT *lprc,
-			  unsigned short *lpString, UINT cbCount,
-			  CONST INT *lpDx)
-{
-
-    GCP_RESULTSW gcpr;
-    char *buffer = snewn(cbCount*2+2, char);
-    char *classbuffer = snewn(cbCount, char);
-    memset(&gcpr, 0, sizeof(gcpr));
-    memset(buffer, 0, cbCount*2+2);
-    memset(classbuffer, GCPCLASS_NEUTRAL, cbCount);
-
-    gcpr.lStructSize = sizeof(gcpr);
-    gcpr.lpGlyphs = (void *)buffer;
-    gcpr.lpClass = classbuffer;
-    gcpr.nGlyphs = cbCount;
-
-    GetCharacterPlacementW(hdc, lpString, cbCount, 0, &gcpr,
-			   FLI_MASK | GCP_CLASSIN);
-
-    ExtTextOut(hdc, x, y, ETO_GLYPH_INDEX | ETO_CLIPPED | ETO_OPAQUE, lprc,
-	       buffer, cbCount, lpDx);
 }
 
 /*
@@ -2089,20 +2086,16 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT message,
 	    }
 	    if (wParam >= IDM_SPECIAL_MIN && wParam <= IDM_SPECIAL_MAX) {
 		int i = (wParam - IDM_SPECIAL_MIN) / 0x10;
-		int j;
 		/*
 		 * Ensure we haven't been sent a bogus SYSCOMMAND
 		 * which would cause us to reference invalid memory
 		 * and crash. Perhaps I'm just too paranoid here.
 		 */
-		for (j = 0; j < i; j++)
-		    if (!specials || !specials[j].name)
-			break;
-		if (j == i) {
-		    if (back)
-			back->special(backhandle, specials[i].code);
-		    net_pending_errors();
-		}
+		if (i >= n_specials)
+		    break;
+		if (back)
+		    back->special(backhandle, specials[i].code);
+		net_pending_errors();
 	    }
 	}
 	break;
@@ -2188,7 +2181,6 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT message,
 			    mi.rcMonitor.top == pt.y) {
 			    mouse_on_hotspot = 1;
 			}
-			CloseHandle(mon);
 		    }
 		}
 #else
@@ -3118,13 +3110,9 @@ void do_text(Context ctx, int x, int y, char *text, int len,
 	for (i = 0; i < len; i++)
 	    wbuf[i] = (WCHAR) ((attr & CSET_MASK) + (text[i] & CHAR_MASK));
 
-	/* print Glyphs as they are, without Windows' Shaping*/
-	exact_textout(hdc, x, y - font_height * (lattr == LATTR_BOT) + text_adjust,
-		      &line_box, wbuf, len, IpDx);
-/*	ExtTextOutW(hdc, x,
+	ExtTextOutW(hdc, x,
 		    y - font_height * (lattr == LATTR_BOT) + text_adjust,
 		    ETO_CLIPPED | ETO_OPAQUE, &line_box, wbuf, len, IpDx);
- */
 
 	/* And the shadow bold hack. */
 	if (bold_mode == BOLD_SHADOW && (attr & ATTR_BOLD)) {

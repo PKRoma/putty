@@ -1960,7 +1960,7 @@ void do_text_internal(Context ctx, int x, int y, char *text, int len,
 			    y*inst->font_height+inst->cfg.window_border,
 			    x*inst->font_width+inst->cfg.window_border + 2*i+1,
 			    y*inst->font_height+inst->cfg.window_border,
-			    len * inst->font_width - i, inst->font_height);
+			    len * widefactor * inst->font_width - i, inst->font_height);
 	}
 	len *= 2;
 	if (lattr != LATTR_WIDE) {
@@ -1974,9 +1974,9 @@ void do_text_internal(Context ctx, int x, int y, char *text, int len,
 		gdk_draw_pixmap(inst->pixmap, gc, inst->pixmap,
 				x*inst->font_width+inst->cfg.window_border,
 				y*inst->font_height+inst->cfg.window_border+dt*i+db,
-				x*widefactor*inst->font_width+inst->cfg.window_border,
+				x*inst->font_width+inst->cfg.window_border,
 				y*inst->font_height+inst->cfg.window_border+dt*(i+1),
-				len * inst->font_width, inst->font_height-i-1);
+				len * widefactor * inst->font_width, inst->font_height-i-1);
 	    }
 	}
     }
@@ -2062,7 +2062,7 @@ void do_cursor(Context ctx, int x, int y, char *text, int len,
 	    gdk_draw_rectangle(inst->pixmap, gc, 0,
 			       x*inst->font_width+inst->cfg.window_border,
 			       y*inst->font_height+inst->cfg.window_border,
-			       len*inst->font_width-1, inst->font_height-1);
+			       len*widefactor*inst->font_width-1, inst->font_height-1);
 	}
     } else {
 	int uheight;
@@ -2084,7 +2084,7 @@ void do_cursor(Context ctx, int x, int y, char *text, int len,
 	    starty = y * inst->font_height + inst->cfg.window_border + uheight;
 	    dx = 1;
 	    dy = 0;
-	    length = len * char_width;
+	    length = len * widefactor * char_width;
 	} else {
 	    int xadjust = 0;
 	    if (attr & TATTR_RIGHTCURS)
@@ -2721,8 +2721,8 @@ void setup_fonts_ucs(struct gui_data *inst)
     inst->font_width = gdk_char_width(inst->fonts[0], ' ');
     inst->font_height = inst->fonts[0]->ascent + inst->fonts[0]->descent;
 
-    inst->direct_to_font = init_ucs(&inst->ucsdata,
-				    inst->cfg.line_codepage, font_charset,
+    inst->direct_to_font = init_ucs(&inst->ucsdata, inst->cfg.line_codepage,
+				    inst->cfg.utf8_override, font_charset,
 				    inst->cfg.vtmode);
 }
 
@@ -3144,22 +3144,51 @@ void update_specials_menu(void *frontend)
     else
 	specials = NULL;
 
+    /* I believe this disposes of submenus too. */
     gtk_container_foreach(GTK_CONTAINER(inst->specialsmenu),
 			  (GtkCallback)gtk_widget_destroy, NULL);
     if (specials) {
 	int i;
-	GtkWidget *menuitem;
-	for (i = 0; specials[i].name; i++) {
-	    if (*specials[i].name) {
+	GtkWidget *menu = inst->specialsmenu;
+	/* A lame "stack" for submenus that will do for now. */
+	GtkWidget *saved_menu = NULL;
+	int nesting = 1;
+	for (i = 0; nesting > 0; i++) {
+	    GtkWidget *menuitem = NULL;
+	    switch (specials[i].code) {
+	      case TS_SUBMENU:
+		assert (nesting < 2);
+		saved_menu = menu; /* XXX lame stacking */
+		menu = gtk_menu_new();
+		menuitem = gtk_menu_item_new_with_label(specials[i].name);
+		gtk_menu_item_set_submenu(GTK_MENU_ITEM(menuitem), menu);
+		gtk_container_add(GTK_CONTAINER(saved_menu), menuitem);
+		gtk_widget_show(menuitem);
+		menuitem = NULL;
+		nesting++;
+		break;
+	      case TS_EXITMENU:
+		nesting--;
+		if (nesting) {
+		    menu = saved_menu; /* XXX lame stacking */
+		    saved_menu = NULL;
+		}
+		break;
+	      case TS_SEP:
+		menuitem = gtk_menu_item_new();
+		break;
+	      default:
 		menuitem = gtk_menu_item_new_with_label(specials[i].name);
 		gtk_object_set_data(GTK_OBJECT(menuitem), "user-data",
 				    GINT_TO_POINTER(specials[i].code));
 		gtk_signal_connect(GTK_OBJECT(menuitem), "activate",
 				   GTK_SIGNAL_FUNC(special_menuitem), inst);
-	    } else
-		menuitem = gtk_menu_item_new();
-	    gtk_container_add(GTK_CONTAINER(inst->specialsmenu), menuitem);
-	    gtk_widget_show(menuitem);
+		break;
+	    }
+	    if (menuitem) {
+		gtk_container_add(GTK_CONTAINER(menu), menuitem);
+		gtk_widget_show(menuitem);
+	    }
 	}
 	gtk_widget_show(inst->specialsitem1);
 	gtk_widget_show(inst->specialsitem2);
@@ -3201,7 +3230,6 @@ static void start_backend(struct gui_data *inst)
 	sfree(title);
     }
     inst->back->provide_logctx(inst->backhandle, inst->logctx);
-    update_specials_menu(inst);
 
     term_provide_resize_fn(inst->term, inst->back->size, inst->backhandle);
 
@@ -3420,6 +3448,8 @@ int pt_main(int argc, char **argv)
 	inst->specialsitem1 = menuitem;
 	MKMENUITEM(NULL, NULL);
 	inst->specialsitem2 = menuitem;
+	gtk_widget_hide(inst->specialsitem1);
+	gtk_widget_hide(inst->specialsitem2);
 	MKMENUITEM("Clear Scrollback", clear_scrollback_menuitem);
 	MKMENUITEM("Reset Terminal", reset_terminal_menuitem);
 	MKMENUITEM("Copy All", copy_all_menuitem);

@@ -228,6 +228,7 @@ void save_open_settings(void *sesskey, int do_host, Config *cfg)
 	   cfg->ssh_cipherlist);
     write_setting_i(sesskey, "AuthTIS", cfg->try_tis_auth);
     write_setting_i(sesskey, "AuthKI", cfg->try_ki_auth);
+    write_setting_i(sesskey, "SshNoShell", cfg->ssh_no_shell);
     write_setting_i(sesskey, "SshProt", cfg->sshprot);
     write_setting_i(sesskey, "SSH2DES", cfg->ssh2_des_cbc);
     write_setting_filename(sesskey, "PublicKeyFile", cfg->keyfile);
@@ -277,8 +278,6 @@ void save_open_settings(void *sesskey, int do_host, Config *cfg)
     write_setting_i(sesskey, "DECOriginMode", cfg->dec_om);
     write_setting_i(sesskey, "AutoWrapMode", cfg->wrap_mode);
     write_setting_i(sesskey, "LFImpliesCR", cfg->lfhascr);
-    write_setting_i(sesskey, "DisableArabicShaping", cfg->arabicshaping);
-    write_setting_i(sesskey, "DisableBidi", cfg->bidi);
     write_setting_i(sesskey, "WinNameAlways", cfg->win_name_always);
     write_setting_s(sesskey, "WinTitle", cfg->wintitle);
     write_setting_i(sesskey, "TermWidth", cfg->width);
@@ -288,7 +287,6 @@ void save_open_settings(void *sesskey, int do_host, Config *cfg)
     write_setting_i(sesskey, "UseSystemColours", cfg->system_colour);
     write_setting_i(sesskey, "TryPalette", cfg->try_palette);
     write_setting_i(sesskey, "BoldAsColour", cfg->bold_colour);
-
     for (i = 0; i < 22; i++) {
 	char buf[20], buf2[30];
 	sprintf(buf, "Colour%d", i);
@@ -313,6 +311,7 @@ void save_open_settings(void *sesskey, int do_host, Config *cfg)
 	write_setting_s(sesskey, buf, buf2);
     }
     write_setting_s(sesskey, "LineCodePage", cfg->line_codepage);
+    write_setting_i(sesskey, "UTF8Override", cfg->utf8_override);
     write_setting_s(sesskey, "Printer", cfg->printer);
     write_setting_i(sesskey, "CapsLockCyr", cfg->xlat_capslockcyr);
     write_setting_i(sesskey, "ScrollBar", cfg->scrollbar);
@@ -490,6 +489,7 @@ void load_open_settings(void *sesskey, int do_host, Config *cfg)
     gppi(sesskey, "SSH2DES", 0, &cfg->ssh2_des_cbc);
     gppi(sesskey, "AuthTIS", 0, &cfg->try_tis_auth);
     gppi(sesskey, "AuthKI", 1, &cfg->try_ki_auth);
+    gppi(sesskey, "SshNoShell", 0, &cfg->ssh_no_shell);
     gppfile(sesskey, "PublicKeyFile", &cfg->keyfile);
     gpps(sesskey, "RemoteCommand", "", cfg->remote_cmd,
 	 sizeof(cfg->remote_cmd));
@@ -540,8 +540,6 @@ void load_open_settings(void *sesskey, int do_host, Config *cfg)
     gppi(sesskey, "DECOriginMode", 0, &cfg->dec_om);
     gppi(sesskey, "AutoWrapMode", 1, &cfg->wrap_mode);
     gppi(sesskey, "LFImpliesCR", 0, &cfg->lfhascr);
-    gppi(sesskey, "DisableArabicShaping", 0, &cfg->arabicshaping);
-    gppi(sesskey, "DisableBidi", 0, &cfg->bidi);
     gppi(sesskey, "WinNameAlways", 1, &cfg->win_name_always);
     gpps(sesskey, "WinTitle", "", cfg->wintitle, sizeof(cfg->wintitle));
     gppi(sesskey, "TermWidth", 80, &cfg->width);
@@ -551,7 +549,6 @@ void load_open_settings(void *sesskey, int do_host, Config *cfg)
     gppi(sesskey, "UseSystemColours", 0, &cfg->system_colour);
     gppi(sesskey, "TryPalette", 0, &cfg->try_palette);
     gppi(sesskey, "BoldAsColour", 1, &cfg->bold_colour);
-
     for (i = 0; i < 22; i++) {
 	static const char *const defaults[] = {
 	    "187,187,187", "255,255,255", "0,0,0", "85,85,85", "0,0,0",
@@ -606,6 +603,7 @@ void load_open_settings(void *sesskey, int do_host, Config *cfg)
      */
     gpps(sesskey, "LineCodePage", "", cfg->line_codepage,
 	 sizeof(cfg->line_codepage));
+    gppi(sesskey, "UTF8Override", 1, &cfg->utf8_override);
     gpps(sesskey, "Printer", "", cfg->printer, sizeof(cfg->printer));
     gppi (sesskey, "CapsLockCyr", 0, &cfg->xlat_capslockcyr);
     gppi(sesskey, "ScrollBar", 1, &cfg->scrollbar);
